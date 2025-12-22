@@ -1,44 +1,45 @@
 """
-Nuitka 打包脚本 - DSM Generation Tool
+Nuitka build script - DSM Generation Tool
 
-确保所有本地包和资源文件都被正确打包。
+Make sure all local packages and resource files are properly bundled.
 """
-# --- 强制 Python 输出为 UTF-8，避免 Windows CI cp1252 报错 ---
-import os, sys
+
+# --- Force UTF-8 output (best effort). Avoid non-ASCII prints in CI anyway. ---
+import os
+import sys
+
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 except Exception:
     pass
+
 import subprocess
 import site
 import shutil
 from pathlib import Path
 
-# --- 配置区 ---
+# --- Config ---
 MAIN_SCRIPT = "main.py"
 EXE_NAME = "DSM_Tool"
 
-# ✅ libs/ 下的权重文件名（运行时会从 dist/libs/ 读取）
+# Model filename under libs/ (runtime will load from dist/libs/)
 MODEL_FILE_NAME = "model_best.pt"
 
-# ✅ 可选：用环境变量指定权重源文件路径（CI 推荐）
-# 例如在 GitHub Actions 里下载到 $GITHUB_WORKSPACE/weights/model_best.pt
-# 然后设置：MODEL_BEST_PT_SRC=.../weights/model_best.pt
+# Optional: provide model source path via env in CI
+# Example: MODEL_BEST_PT_SRC=D:/a/.../weights/model_best.pt
 MODEL_SRC_ENV = "MODEL_BEST_PT_SRC"
 
-# 获取项目根目录
+# Project root dir
 PROJECT_ROOT = Path(__file__).parent.absolute()
 
-# --- GDAL/PROJ 数据路径检测 ---
+# --- GDAL/PROJ data path detection ---
 try:
     import osgeo
 
-    # 获取 osgeo 模块所在的实际根目录
     osgeo_path = Path(osgeo.__file__).parent
 
-    # 尝试查找 GDAL 和 PROJ 的数据路径
     gdal_data_candidates = [
         osgeo_path / "data" / "gdal",
         osgeo_path.parent / "osgeo" / "data" / "gdal",
@@ -62,7 +63,7 @@ try:
             PROJ_DATA_SRC = candidate
             break
 
-    # 如果还是找不到，尝试从 site-packages 查找
+    # Fallback: search under site-packages
     if not GDAL_DATA_SRC or not PROJ_DATA_SRC:
         site_packages = site.getsitepackages()
         if site_packages:
@@ -76,15 +77,15 @@ try:
                 if proj_candidate.exists():
                     PROJ_DATA_SRC = proj_candidate
 
-    print(f"GDAL 数据路径: {GDAL_DATA_SRC} (存在: {GDAL_DATA_SRC.exists() if GDAL_DATA_SRC else False})")
-    print(f"PROJ 数据路径: {PROJ_DATA_SRC} (存在: {PROJ_DATA_SRC.exists() if PROJ_DATA_SRC else False})")
+    print(f"GDAL data dir: {GDAL_DATA_SRC} (exists: {GDAL_DATA_SRC.exists() if GDAL_DATA_SRC else False})")
+    print(f"PROJ data dir: {PROJ_DATA_SRC} (exists: {PROJ_DATA_SRC.exists() if PROJ_DATA_SRC else False})")
 
 except ImportError:
-    print("警告: 未找到 osgeo 模块，GDAL/PROJ 数据路径将跳过")
+    print("WARNING: osgeo module not found. GDAL/PROJ data dir detection will be skipped.")
     GDAL_DATA_SRC = None
     PROJ_DATA_SRC = None
 
-# --- 构建 Nuitka 命令 ---
+# --- Build Nuitka command ---
 cmd = [
     sys.executable, "-m", "nuitka",
     "--standalone",
@@ -94,7 +95,7 @@ cmd = [
     "--plugin-enable=pyqt6",
     "--windows-console-mode=disable",
 
-    # 包含所有本地包（递归包含子包）
+    # Include all local packages (recursive)
     "--include-package=processors",
     "--include-package=tabs",
     "--include-package=loaders",
@@ -102,98 +103,96 @@ cmd = [
     "--include-package=ui",
     "--include-package=utils",
 
-    # 确保动态导入的模块也被包含（pkgutil.iter_modules 等）
+    # Ensure dynamic imports are included
     "--include-module=pkgutil",
     "--include-module=importlib",
 
-    # 包含第三方包
+    # Third-party packages
     "--include-package=rasterio",
     "--include-package=numpy",
     "--include-package=osgeo",
 
-    # PyTorch 支持（如果使用深度学习算法）
+    # PyTorch support
     "--include-package=torch",
     "--include-package-data=torch",
-
-    # GDAL/PROJ 数据文件
 ]
 
-# 添加 GDAL/PROJ 数据目录（如果找到）
+# Add GDAL/PROJ data directories
 if GDAL_DATA_SRC and GDAL_DATA_SRC.exists():
     cmd.append(f"--include-data-dir={GDAL_DATA_SRC}=gdal-data")
 else:
-    print("警告: 未找到 GDAL 数据目录，打包后可能无法正常工作")
+    print("WARNING: GDAL data dir not found. The packaged app may not work correctly.")
 
 if PROJ_DATA_SRC and PROJ_DATA_SRC.exists():
     cmd.append(f"--include-data-dir={PROJ_DATA_SRC}=proj-data")
 else:
-    print("警告: 未找到 PROJ 数据目录，打包后可能无法正常工作")
+    print("WARNING: PROJ data dir not found. The packaged app may not work correctly.")
 
-# ❌ 关键修改：不再把 model_best.pt 打进包里
+# IMPORTANT: do NOT embed model_best.pt into the executable/package.
+# We will copy it to dist/libs/ after build (optional).
 # model_file = PROJECT_ROOT / "model_best.pt"
 # if model_file.exists():
 #     cmd.append(f"--include-data-file={model_file}=model_best.pt")
-#     print(f"包含模型文件: {model_file}")
 
-# 保留你原来的 SR 模型目录逻辑（如你也想外置，可再按同样思路改）
+# Keep your SR model directory packaging as-is
 sr_model_dir = PROJECT_ROOT / "processors" / "sr" / "sr" / "model"
 if sr_model_dir.exists():
     cmd.append(f"--include-data-dir={sr_model_dir}=processors/sr/sr/model")
-    print(f"包含 SR 模型目录: {sr_model_dir}")
+    print(f"Include SR model dir: {sr_model_dir}")
 
-# 输出目录
+# Output directory
 cmd.extend([
     "--output-dir=build",
     str(MAIN_SCRIPT),
 ])
 
-print("\n" + "="*60)
-print("Nuitka 打包配置:")
-print("="*60)
-print(f"主脚本: {MAIN_SCRIPT}")
-print(f"输出文件名: {EXE_NAME}")
-print(f"项目根目录: {PROJECT_ROOT}")
-print(f"包含的本地包: processors, tabs, loaders, views, ui, utils")
-print(f"权重外置策略: 打包后复制到 dist/libs/{MODEL_FILE_NAME}（不打进 exe）")
-print("="*60 + "\n")
+print("\n" + "=" * 60)
+print("Nuitka build configuration:")
+print("=" * 60)
+print(f"Main script: {MAIN_SCRIPT}")
+print(f"Output exe name: {EXE_NAME}")
+print(f"Project root: {PROJECT_ROOT}")
+print("Included local packages: processors, tabs, loaders, views, ui, utils")
+print(f"External model strategy: copy to dist/libs/{MODEL_FILE_NAME} after build (not embedded)")
+print("=" * 60 + "\n")
 
-print("正在启动 Nuitka 打包流程...\n")
+print("Starting Nuitka build...\n")
 
-# 执行打包
+# Run build
 result = subprocess.run(cmd, check=False)
 
 if result.returncode == 0:
-    print("\n" + "="*60)
-    print("打包成功！")
-    print("="*60)
+    print("\n" + "=" * 60)
+    print("Build succeeded.")
+    print("=" * 60)
 
     dist_dir = Path("build") / f"{EXE_NAME}.dist"
     libs_dir = dist_dir / "libs"
     libs_dir.mkdir(parents=True, exist_ok=True)
 
-    # ✅ 权重来源优先级：
-    # 1) 环境变量指定的路径
-    # 2) 项目根目录/libs/model_best.pt
+    # Model source priority:
+    # 1) env MODEL_BEST_PT_SRC
+    # 2) PROJECT_ROOT/libs/model_best.pt
     model_src = os.environ.get(MODEL_SRC_ENV, "").strip()
     model_src_path = Path(model_src) if model_src else (PROJECT_ROOT / "libs" / MODEL_FILE_NAME)
     model_dst_path = libs_dir / MODEL_FILE_NAME
 
     if model_src_path.exists():
         shutil.copy2(model_src_path, model_dst_path)
-        print(f"✅ 已复制权重到: {model_dst_path}")
-        print(f"   源文件: {model_src_path}")
+        print(f"Model copied to: {model_dst_path}")
+        print(f"Model source: {model_src_path}")
     else:
-        print("⚠️ 未复制权重文件（源文件不存在）")
-        print(f"   你可以：")
-        print(f"   1) 放置到项目根目录: {PROJECT_ROOT / 'libs' / MODEL_FILE_NAME}")
-        print(f"   或 2) 设置环境变量 {MODEL_SRC_ENV} 指向权重文件路径（CI 推荐）")
+        print("Model NOT copied (source file not found).")
+        print("You can do one of the following:")
+        print(f"1) Put the model here: {PROJECT_ROOT / 'libs' / MODEL_FILE_NAME}")
+        print(f"2) Or set env {MODEL_SRC_ENV} to point to the model file path (recommended for CI).")
 
-    print(f"\n可执行文件位置: {dist_dir}/{EXE_NAME}.exe")
-    print("\n提示:")
-    print("1. 运行时请确保 dist/libs/ 下存在 model_best.pt")
-    print("2. 测试打包后的程序，确认所有功能正常")
+    print(f"\nExecutable location: {dist_dir}/{EXE_NAME}.exe")
+    print("\nNotes:")
+    print("1) At runtime, make sure dist/libs/model_best.pt exists for model inference features.")
+    print("2) Test the packaged app to confirm all features work.")
 else:
-    print("\n" + "="*60)
-    print("打包失败！请检查上面的错误信息。")
-    print("="*60)
+    print("\n" + "=" * 60)
+    print("Build failed. Check the error logs above.")
+    print("=" * 60)
     sys.exit(1)
