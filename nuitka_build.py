@@ -1,13 +1,15 @@
 """
 Nuitka build script - DSM Generation Tool
 
-Make sure all local packages and resource files are properly bundled.
+Goal:
+- Bundle local packages and resources correctly.
+- Do NOT embed model weights into the exe.
+- After build, copy model_best.pt into: build/DSM_Tool.dist/libs/model_best.pt
+- Work for both local build and GitHub Actions build.
 """
 
-# --- Force UTF-8 output (best effort). Avoid non-ASCII prints in CI anyway. ---
-import os
-import sys
-
+# --- Force UTF-8 output to avoid Windows CI cp1252 errors ---
+import os, sys
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -24,15 +26,34 @@ from pathlib import Path
 MAIN_SCRIPT = "main.py"
 EXE_NAME = "DSM_Tool"
 
-# Model filename under libs/ (runtime will load from dist/libs/)
+# Weights are external (runtime loads from dist/libs/)
 MODEL_FILE_NAME = "model_best.pt"
 
-# Optional: provide model source path via env in CI
-# Example: MODEL_BEST_PT_SRC=D:/a/.../weights/model_best.pt
+# Optional: specify weight source path via env (recommended in CI)
+# e.g. MODEL_BEST_PT_SRC=D:/a/.../weights/model_best.pt
 MODEL_SRC_ENV = "MODEL_BEST_PT_SRC"
 
-# Project root dir
+# Optional: force mingw in CI if you want (can help MSVC heap issues)
+# set NUITKA_USE_MINGW=1
+USE_MINGW_ENV = "NUITKA_USE_MINGW"
+
+# Detect CI (GitHub Actions)
+IS_GHA = os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
+
+# Project root
 PROJECT_ROOT = Path(__file__).parent.absolute()
+
+# --- MSVC heap / memory tuning (Windows) ---
+# Nuitka will pass CCFLAGS to C compiler. (Nuitka docs)
+# Increase MSVC heap for large generated C files in CI.
+if os.name == "nt":
+    extra_ccflags = []
+    if IS_GHA:
+        extra_ccflags.append("/Zm300")  # try 300; if still fails, bump to /Zm500
+    # Append to existing CCFLAGS (do not overwrite user's settings)
+    if extra_ccflags:
+        old = os.environ.get("CCFLAGS", "")
+        os.environ["CCFLAGS"] = (old + " " + " ".join(extra_ccflags)).strip()
 
 # --- GDAL/PROJ data path detection ---
 try:
@@ -44,7 +65,6 @@ try:
         osgeo_path / "data" / "gdal",
         osgeo_path.parent / "osgeo" / "data" / "gdal",
     ]
-
     proj_data_candidates = [
         osgeo_path / "data" / "proj",
         osgeo_path.parent / "osgeo" / "data" / "proj",
@@ -53,35 +73,34 @@ try:
     GDAL_DATA_SRC = None
     PROJ_DATA_SRC = None
 
-    for candidate in gdal_data_candidates:
-        if candidate.exists():
-            GDAL_DATA_SRC = candidate
+    for c in gdal_data_candidates:
+        if c.exists():
+            GDAL_DATA_SRC = c
             break
 
-    for candidate in proj_data_candidates:
-        if candidate.exists():
-            PROJ_DATA_SRC = candidate
+    for c in proj_data_candidates:
+        if c.exists():
+            PROJ_DATA_SRC = c
             break
 
-    # Fallback: search under site-packages
     if not GDAL_DATA_SRC or not PROJ_DATA_SRC:
         site_packages = site.getsitepackages()
         if site_packages:
             sp_path = Path(site_packages[0])
             if not GDAL_DATA_SRC:
-                gdal_candidate = sp_path / "osgeo" / "data" / "gdal"
-                if gdal_candidate.exists():
-                    GDAL_DATA_SRC = gdal_candidate
+                c = sp_path / "osgeo" / "data" / "gdal"
+                if c.exists():
+                    GDAL_DATA_SRC = c
             if not PROJ_DATA_SRC:
-                proj_candidate = sp_path / "osgeo" / "data" / "proj"
-                if proj_candidate.exists():
-                    PROJ_DATA_SRC = proj_candidate
+                c = sp_path / "osgeo" / "data" / "proj"
+                if c.exists():
+                    PROJ_DATA_SRC = c
 
     print(f"GDAL data dir: {GDAL_DATA_SRC} (exists: {GDAL_DATA_SRC.exists() if GDAL_DATA_SRC else False})")
     print(f"PROJ data dir: {PROJ_DATA_SRC} (exists: {PROJ_DATA_SRC.exists() if PROJ_DATA_SRC else False})")
 
 except ImportError:
-    print("WARNING: osgeo module not found. GDAL/PROJ data dir detection will be skipped.")
+    print("WARNING: osgeo not found, GDAL/PROJ data dir detection skipped.")
     GDAL_DATA_SRC = None
     PROJ_DATA_SRC = None
 
@@ -94,57 +113,78 @@ cmd = [
     "--show-memory",
     "--plugin-enable=pyqt6",
     "--windows-console-mode=disable",
+]
 
-    # Include all local packages (recursive)
+# Optional: force mingw (can avoid MSVC heap issues)
+if os.environ.get(USE_MINGW_ENV, "").strip() == "1":
+    cmd.append("--mingw64")
+
+# CI memory stabilization (do NOT affect local unless in GHA)
+if IS_GHA:
+    cmd += [
+        "--low-memory",
+        "--jobs=2",
+    ]
+
+# Include local packages
+cmd += [
     "--include-package=processors",
     "--include-package=tabs",
     "--include-package=loaders",
     "--include-package=views",
     "--include-package=ui",
     "--include-package=utils",
+]
 
-    # Ensure dynamic imports are included
+# Ensure dynamic-import helpers included
+cmd += [
     "--include-module=pkgutil",
     "--include-module=importlib",
+]
 
-    # Third-party packages
+# Include third-party packages
+cmd += [
     "--include-package=rasterio",
     "--include-package=numpy",
     "--include-package=osgeo",
+]
 
-    # PyTorch support
+# Torch
+cmd += [
     "--include-package=torch",
     "--include-package-data=torch",
 ]
 
-# Add GDAL/PROJ data directories
+# IMPORTANT: avoid MSVC heap crash by not compiling sympy to C in CI.
+# Torch may pull sympy; in standalone it must be present, but we can keep it uncompiled.
+if IS_GHA:
+    cmd += [
+        "--include-package=sympy",
+        "--uncompiled-module=sympy",
+    ]
+
+# GDAL/PROJ data dirs
 if GDAL_DATA_SRC and GDAL_DATA_SRC.exists():
     cmd.append(f"--include-data-dir={GDAL_DATA_SRC}=gdal-data")
 else:
-    print("WARNING: GDAL data dir not found. The packaged app may not work correctly.")
+    print("WARNING: GDAL data dir not found; runtime may fail.")
 
 if PROJ_DATA_SRC and PROJ_DATA_SRC.exists():
     cmd.append(f"--include-data-dir={PROJ_DATA_SRC}=proj-data")
 else:
-    print("WARNING: PROJ data dir not found. The packaged app may not work correctly.")
+    print("WARNING: PROJ data dir not found; runtime may fail.")
 
-# IMPORTANT: do NOT embed model_best.pt into the executable/package.
-# We will copy it to dist/libs/ after build (optional).
-# model_file = PROJECT_ROOT / "model_best.pt"
-# if model_file.exists():
-#     cmd.append(f"--include-data-file={model_file}=model_best.pt")
-
-# Keep your SR model directory packaging as-is
+# Keep your SR model dir logic (if you also want it external later, we can do the same as pt)
 sr_model_dir = PROJECT_ROOT / "processors" / "sr" / "sr" / "model"
 if sr_model_dir.exists():
     cmd.append(f"--include-data-dir={sr_model_dir}=processors/sr/sr/model")
     print(f"Include SR model dir: {sr_model_dir}")
 
-# Output directory
-cmd.extend([
+# Output dir + main script
+cmd += [
     "--output-dir=build",
     str(MAIN_SCRIPT),
-])
+]
 
 print("\n" + "=" * 60)
 print("Nuitka build configuration:")
@@ -154,11 +194,13 @@ print(f"Output exe name: {EXE_NAME}")
 print(f"Project root: {PROJECT_ROOT}")
 print("Included local packages: processors, tabs, loaders, views, ui, utils")
 print(f"External model strategy: copy to dist/libs/{MODEL_FILE_NAME} after build (not embedded)")
+print(f"Running in GitHub Actions: {IS_GHA}")
+if os.name == "nt":
+    print(f"CCFLAGS: {os.environ.get('CCFLAGS','')}")
 print("=" * 60 + "\n")
 
 print("Starting Nuitka build...\n")
 
-# Run build
 result = subprocess.run(cmd, check=False)
 
 if result.returncode == 0:
@@ -170,27 +212,25 @@ if result.returncode == 0:
     libs_dir = dist_dir / "libs"
     libs_dir.mkdir(parents=True, exist_ok=True)
 
-    # Model source priority:
+    # Weight source priority:
     # 1) env MODEL_BEST_PT_SRC
-    # 2) PROJECT_ROOT/libs/model_best.pt
+    # 2) project_root/libs/model_best.pt
     model_src = os.environ.get(MODEL_SRC_ENV, "").strip()
     model_src_path = Path(model_src) if model_src else (PROJECT_ROOT / "libs" / MODEL_FILE_NAME)
     model_dst_path = libs_dir / MODEL_FILE_NAME
 
     if model_src_path.exists():
         shutil.copy2(model_src_path, model_dst_path)
-        print(f"Model copied to: {model_dst_path}")
-        print(f"Model source: {model_src_path}")
+        print(f"Copied weight to: {model_dst_path}")
+        print(f"Weight source:   {model_src_path}")
     else:
-        print("Model NOT copied (source file not found).")
-        print("You can do one of the following:")
-        print(f"1) Put the model here: {PROJECT_ROOT / 'libs' / MODEL_FILE_NAME}")
-        print(f"2) Or set env {MODEL_SRC_ENV} to point to the model file path (recommended for CI).")
+        print("WARNING: weight file not copied (source not found).")
+        print(f"Place it at: {PROJECT_ROOT / 'libs' / MODEL_FILE_NAME}")
+        print(f"Or set env {MODEL_SRC_ENV} to the weight path (recommended in CI).")
 
-    print(f"\nExecutable location: {dist_dir}/{EXE_NAME}.exe")
-    print("\nNotes:")
-    print("1) At runtime, make sure dist/libs/model_best.pt exists for model inference features.")
-    print("2) Test the packaged app to confirm all features work.")
+    print(f"\nExe location: {dist_dir}/{EXE_NAME}.exe")
+    print("\nRuntime note:")
+    print(f"- Ensure dist/libs/{MODEL_FILE_NAME} exists when running.")
 else:
     print("\n" + "=" * 60)
     print("Build failed. Check the error logs above.")

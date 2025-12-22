@@ -1,0 +1,14 @@
+# requirements-ci.txt
+nuitka
+ordered-set
+zstandard
+
+PyQt6
+numpy
+rasterio
+scikit-image
+scipy
+matplotlib
+einops
+tifffile
+opencv-python

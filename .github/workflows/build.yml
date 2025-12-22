@@ -6,14 +6,18 @@ on:
 jobs:
   build:
     runs-on: windows-latest
-    
+    env:
+      NUITKA_CACHE_DIR: ${{ github.workspace }}\.nuitka_cache
+      CLCACHE_DIR: ${{ github.workspace }}\.clcache
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
+
     steps:
       - name: Maximize Build Space
-        # GitHub Runner 空间有限，这里清理一些不需要的预装软件以腾出约 20GB 空间
+        shell: pwsh
         run: |
-          echo "Cleaning up disk space..."
-          Get-ChildItem -Path "C:\hostedtoolcache\windows\PyPy" -ErrorAction SilentlyContinue | Remove-Item -Recurse
-          Get-ChildItem -Path "C:\hostedtoolcache\windows\Ruby" -ErrorAction SilentlyContinue | Remove-Item -Recurse
+          Get-ChildItem -Path "C:\hostedtoolcache\windows\PyPy" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
+          Get-ChildItem -Path "C:\hostedtoolcache\windows\Ruby" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
 
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -21,31 +25,39 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements-ci.txt
 
-      - name: Install Nuitka
-        run: pip install nuitka ordered-set zstandard
+      - name: Cache Nuitka and clcache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .nuitka_cache
+            .clcache
+          key: nuitka-${{ runner.os }}-py312-${{ hashFiles('requirements-ci.txt') }}
+          restore-keys: |
+            nuitka-${{ runner.os }}-py312-
 
-      - name: Install CUDA Torch & GDAL
+      - name: Install requirements
+        shell: pwsh
         run: |
-          # 关键点：安装和你本地版本一致的 CUDA 12.4 版
+          python -m pip install -U pip
+          pip install -r requirements-ci.txt
+
+      - name: Install CUDA Torch and GDAL
+        shell: pwsh
+        run: |
           pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
-          
-          # 安装GDAL whl
           pip install https://github.com/cgohlke/geospatial-wheels/releases/download/v2025.10.25/GDAL-3.11.4-cp312-cp312-win_amd64.whl
-          
-          # 安装其余依赖
-          pip install PyQt6 numpy rasterio scikit-image scipy matplotlib einops tifffile opencv-python
 
       - name: Run Nuitka Build
+        shell: pwsh
         run: python nuitka_build.py
-        env:
-          GITHUB_ACTIONS: true
 
       - name: Zip Result
         shell: pwsh
         run: |
-          # 注意：CUDA 版打包后非常大，压缩可能需要几分钟
           Compress-Archive -Path "build/DSM_Tool.dist/*" -DestinationPath "DSM_Tool_GPU_v1.0.zip"
 
       - name: Upload Binary
