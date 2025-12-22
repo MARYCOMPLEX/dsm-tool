@@ -3,9 +3,14 @@ Nuitka 打包脚本 - DSM Generation Tool
 
 确保所有本地包和资源文件都被正确打包。
 """
-
-import os
-import sys
+# --- 强制 Python 输出为 UTF-8，避免 Windows CI cp1252 报错 ---
+import os, sys
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 import subprocess
 import site
 import shutil
