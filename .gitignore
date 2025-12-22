@@ -1,0 +1,10 @@
+/build/
+/venv/
+*.pyc
+__pycache__/
+/example*/
+.idea
+
+FRAMEWORK*.md
+gdal*.whl
+processors/sr/sr/model/model_best.pt
