@@ -1,0 +1,56 @@
+name: Build GPU-Enabled DSM Tool
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Maximize Build Space
+        # GitHub Runner 空间有限，这里清理一些不需要的预装软件以腾出约 20GB 空间
+        run: |
+          echo "Cleaning up disk space..."
+          Get-ChildItem -Path "C:\hostedtoolcache\windows\PyPy" -ErrorAction SilentlyContinue | Remove-Item -Recurse
+          Get-ChildItem -Path "C:\hostedtoolcache\windows\Ruby" -ErrorAction SilentlyContinue | Remove-Item -Recurse
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Nuitka
+        run: pip install nuitka ordered-set zstandard
+
+      - name: Install CUDA Torch & GDAL
+        run: |
+          # 关键点：安装和你本地版本一致的 CUDA 12.4 版
+          pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+          
+          # 安装GDAL whl
+          pip install https://github.com/cgohlke/geospatial-wheels/releases/download/v2025.10.25/GDAL-3.11.4-cp312-cp312-win_amd64.whl
+          
+          # 安装其余依赖
+          pip install PyQt6 numpy rasterio scikit-image scipy matplotlib einops tifffile opencv-python
+
+      - name: Run Nuitka Build
+        run: python nuitka_build.py
+        env:
+          GITHUB_ACTIONS: true
+
+      - name: Zip Result
+        shell: pwsh
+        run: |
+          # 注意：CUDA 版打包后非常大，压缩可能需要几分钟
+          Compress-Archive -Path "build/DSM_Tool.dist/*" -DestinationPath "DSM_Tool_GPU_v1.0.zip"
+
+      - name: Upload Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSM_Tool_GPU_Binary
+          path: DSM_Tool_GPU_v1.0.zip
+          retention-days: 5
