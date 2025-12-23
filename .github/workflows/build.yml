@@ -18,7 +18,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Restore
+      - name: Restore Cache
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -30,9 +30,9 @@ jobs:
         run: |
           pip install nuitka
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
-          # 修正参数：--stop-after=c_compilation
-          python -m nuitka --standalone --stop-after=c_compilation --include-package=torch --jobs=2 pre_compile.py torch
-      - name: Save
+          # 不再使用 --stop-after，直接打一个 standalone 包来产生缓存
+          python -m nuitka --standalone --include-package=torch --jobs=2 --output-dir=temp_build pre_compile.py torch
+      - name: Save Cache
         if: always()
         uses: actions/cache/save@v4
         with:
@@ -61,7 +61,7 @@ jobs:
       - name: Install & Compile
         run: |
           pip install nuitka PyQt6
-          python -m nuitka --standalone --stop-after=c_compilation --include-package=PyQt6 --jobs=2 pre_compile.py qt
+          python -m nuitka --standalone --include-package=PyQt6 --jobs=2 --output-dir=temp_build pre_compile.py qt
       - name: Save
         if: always()
         uses: actions/cache/save@v4
@@ -91,7 +91,7 @@ jobs:
       - name: Install & Compile
         run: |
           pip install nuitka numpy rasterio scipy
-          python -m nuitka --standalone --stop-after=c_compilation --include-package=numpy --include-package=rasterio --jobs=2 pre_compile.py sci
+          python -m nuitka --standalone --include-package=numpy --include-package=rasterio --jobs=2 --output-dir=temp_build pre_compile.py sci
       - name: Save
         if: always()
         uses: actions/cache/save@v4
@@ -122,7 +122,7 @@ jobs:
         run: |
           pip install nuitka
           pip install https://github.com/cgohlke/geospatial-wheels/releases/download/v2025.10.25/GDAL-3.11.4-cp312-cp312-win_amd64.whl
-          python -m nuitka --standalone --stop-after=c_compilation --include-package=osgeo --jobs=2 pre_compile.py osgeo
+          python -m nuitka --standalone --include-package=osgeo --jobs=2 --output-dir=temp_build pre_compile.py osgeo
       - name: Save
         if: always()
         uses: actions/cache/save@v4
@@ -142,12 +142,10 @@ jobs:
         run: |
           Get-ChildItem -Path "C:\hostedtoolcache\windows\PyPy" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
           Get-ChildItem -Path "C:\hostedtoolcache\windows\Ruby" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
-
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - name: Restore Full Cache
         uses: actions/cache/restore@v4
         with:
@@ -156,7 +154,6 @@ jobs:
             .clcache
           key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-final-${{ github.run_id }}
           restore-keys: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-gdal
-
       - name: Install All requirements
         shell: pwsh
         run: |
@@ -164,13 +161,11 @@ jobs:
           pip install -r requirements-ci.txt
           pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
           pip install https://github.com/cgohlke/geospatial-wheels/releases/download/v2025.10.25/GDAL-3.11.4-cp312-cp312-win_amd64.whl
-
       - name: Run Nuitka Build
         shell: pwsh
         run: python nuitka_build.py
         env:
           GITHUB_ACTIONS: true
-
       - name: Save Final Cache
         if: always()
         uses: actions/cache/save@v4
@@ -179,11 +174,9 @@ jobs:
             .nuitka_cache
             .clcache
           key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-final-${{ github.run_id }}
-
-      - name: Zip Result
+      - name: Zip & Upload
         shell: pwsh
         run: Compress-Archive -Path "build/DSM_Tool.dist/*" -DestinationPath "DSM_Tool_GPU_v1.0.zip"
-
       - name: Upload Binary
         uses: actions/upload-artifact@v4
         with:
