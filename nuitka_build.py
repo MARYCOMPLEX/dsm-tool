@@ -127,7 +127,6 @@ if sr_model_dir.exists():
     print(f"Include SR model dir: {sr_model_dir}")
 
 cmd += ["--output-dir=build", str(MAIN_SCRIPT)]
-cmd += ["--output-dir=build", str(MAIN_SCRIPT)]
 
 print("\n" + "=" * 60)
 print("Nuitka build configuration:")
