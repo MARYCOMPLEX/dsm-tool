@@ -29,7 +29,8 @@ jobs:
           restore-keys: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-
       - name: Install & Compile
         run: |
-          pip install nuitka torch torchvision --index-url https://download.pytorch.org/whl/cu124
+          pip install nuitka
+          pip ionstall torch torchvision --index-url https://download.pytorch.org/whl/cu124
           python -m nuitka --standalone --stop-after-stage=c_compilation --include-package=torch --jobs=2 pre_compile.py torch
       - name: Save
         if: always()
