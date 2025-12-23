@@ -8,8 +8,6 @@ env:
   CLCACHE_DIR: ${{ github.workspace }}\.clcache
   PYTHONUTF8: "1"
   PYTHONIOENCODING: "utf-8"
-  # 基础 Key 前缀
-  K: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}
 
 jobs:
   # --- 1. Torch 预编译 ---
@@ -26,8 +24,9 @@ jobs:
           path: |
             .nuitka_cache
             .clcache
-          key: ${{ env.K }}-torch
-          restore-keys: ${{ env.K }}-
+          # 将 hashFiles 逻辑直接写在这里
+          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-torch
+          restore-keys: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-
       - name: Install & Compile
         run: |
           pip install nuitka torch torchvision --index-url https://download.pytorch.org/whl/cu124
@@ -39,7 +38,7 @@ jobs:
           path: |
             .nuitka_cache
             .clcache
-          key: ${{ env.K }}-torch
+          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-torch
 
   # --- 2. UI 预编译 ---
   pre-ui:
@@ -56,8 +55,8 @@ jobs:
           path: |
             .nuitka_cache
             .clcache
-          key: ${{ env.K }}-ui
-          restore-keys: ${{ env.K }}-torch
+          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-ui
+          restore-keys: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-torch
       - name: Install & Compile
         run: |
           pip install nuitka PyQt6
@@ -69,7 +68,7 @@ jobs:
           path: |
             .nuitka_cache
             .clcache
-          key: ${{ env.K }}-ui
+          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-ui
 
   # --- 3. Scientific 预编译 ---
   pre-sci:
@@ -86,11 +85,11 @@ jobs:
           path: |
             .nuitka_cache
             .clcache
-          key: ${{ env.K }}-sci
-          restore-keys: ${{ env.K }}-ui
+          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-sci
+          restore-keys: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-ui
       - name: Install & Compile
         run: |
-          pip install nuitka numpy rasterio scipy skimage
+          pip install nuitka numpy rasterio scipy scikit-image
           python -m nuitka --standalone --stop-after-stage=c_compilation --include-package=numpy --include-package=rasterio --jobs=2 pre_compile.py sci
       - name: Save
         if: always()
@@ -99,7 +98,7 @@ jobs:
           path: |
             .nuitka_cache
             .clcache
-          key: ${{ env.K }}-sci
+          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-sci
 
   # --- 4. GDAL 预编译 ---
   pre-gdal:
@@ -116,8 +115,8 @@ jobs:
           path: |
             .nuitka_cache
             .clcache
-          key: ${{ env.K }}-gdal
-          restore-keys: ${{ env.K }}-sci
+          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-gdal
+          restore-keys: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-sci
       - name: Install & Compile
         run: |
           pip install nuitka
@@ -130,7 +129,7 @@ jobs:
           path: |
             .nuitka_cache
             .clcache
-          key: ${{ env.K }}-gdal
+          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-gdal
 
   # --- 5. 最终打包 ---
   final-build:
@@ -138,10 +137,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Maximize Build Space
+        shell: pwsh
         run: |
           Get-ChildItem -Path "C:\hostedtoolcache\windows\PyPy" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
           Get-ChildItem -Path "C:\hostedtoolcache\windows\Ruby" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
-        shell: pwsh
 
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -154,22 +153,22 @@ jobs:
           path: |
             .nuitka_cache
             .clcache
-          key: ${{ env.K }}-final-${{ github.run_id }}
-          restore-keys: ${{ env.K }}-gdal
+          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-final-${{ github.run_id }}
+          restore-keys: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-gdal
 
-      - name: Install All (Original Commands)
+      - name: Install All requirements
+        shell: pwsh
         run: |
           python -m pip install -U pip
           pip install -r requirements-ci.txt
           pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
           pip install https://github.com/cgohlke/geospatial-wheels/releases/download/v2025.10.25/GDAL-3.11.4-cp312-cp312-win_amd64.whl
-        shell: pwsh
 
       - name: Run Nuitka Build
+        shell: pwsh
         run: python nuitka_build.py
         env:
           GITHUB_ACTIONS: true
-        shell: pwsh
 
       - name: Save Final Cache
         if: always()
@@ -178,12 +177,12 @@ jobs:
           path: |
             .nuitka_cache
             .clcache
-          key: ${{ env.K }}-final-${{ github.run_id }}
+          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-final-${{ github.run_id }}
 
       - name: Zip & Upload
+        shell: pwsh
         run: |
           Compress-Archive -Path "build/DSM_Tool.dist/*" -DestinationPath "DSM_Tool_GPU_v1.0.zip"
-        shell: pwsh
 
       - name: Upload Binary
         uses: actions/upload-artifact@v4
