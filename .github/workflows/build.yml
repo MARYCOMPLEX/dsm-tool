@@ -24,14 +24,14 @@ jobs:
           path: |
             .nuitka_cache
             .clcache
-          # 将 hashFiles 逻辑直接写在这里
           key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-torch
           restore-keys: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-
       - name: Install & Compile
         run: |
           pip install nuitka
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
-          python -m nuitka --standalone --stop-after-stage=c_compilation --include-package=torch --jobs=2 pre_compile.py torch
+          # 修正参数：--stop-after=c_compilation
+          python -m nuitka --standalone --stop-after=c_compilation --include-package=torch --jobs=2 pre_compile.py torch
       - name: Save
         if: always()
         uses: actions/cache/save@v4
@@ -61,7 +61,7 @@ jobs:
       - name: Install & Compile
         run: |
           pip install nuitka PyQt6
-          python -m nuitka --standalone --stop-after-stage=c_compilation --include-package=PyQt6 --jobs=2 pre_compile.py qt
+          python -m nuitka --standalone --stop-after=c_compilation --include-package=PyQt6 --jobs=2 pre_compile.py qt
       - name: Save
         if: always()
         uses: actions/cache/save@v4
@@ -90,8 +90,8 @@ jobs:
           restore-keys: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-ui
       - name: Install & Compile
         run: |
-          pip install nuitka numpy rasterio scipy scikit-image
-          python -m nuitka --standalone --stop-after-stage=c_compilation --include-package=numpy --include-package=rasterio --jobs=2 pre_compile.py sci
+          pip install nuitka numpy rasterio scipy
+          python -m nuitka --standalone --stop-after=c_compilation --include-package=numpy --include-package=rasterio --jobs=2 pre_compile.py sci
       - name: Save
         if: always()
         uses: actions/cache/save@v4
@@ -122,7 +122,7 @@ jobs:
         run: |
           pip install nuitka
           pip install https://github.com/cgohlke/geospatial-wheels/releases/download/v2025.10.25/GDAL-3.11.4-cp312-cp312-win_amd64.whl
-          python -m nuitka --standalone --stop-after-stage=c_compilation --include-package=osgeo --jobs=2 pre_compile.py osgeo
+          python -m nuitka --standalone --stop-after=c_compilation --include-package=osgeo --jobs=2 pre_compile.py osgeo
       - name: Save
         if: always()
         uses: actions/cache/save@v4
@@ -180,10 +180,9 @@ jobs:
             .clcache
           key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-final-${{ github.run_id }}
 
-      - name: Zip & Upload
+      - name: Zip Result
         shell: pwsh
-        run: |
-          Compress-Archive -Path "build/DSM_Tool.dist/*" -DestinationPath "DSM_Tool_GPU_v1.0.zip"
+        run: Compress-Archive -Path "build/DSM_Tool.dist/*" -DestinationPath "DSM_Tool_GPU_v1.0.zip"
 
       - name: Upload Binary
         uses: actions/upload-artifact@v4
