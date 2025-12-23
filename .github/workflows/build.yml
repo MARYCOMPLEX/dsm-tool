@@ -32,7 +32,7 @@ jobs:
         run: |
           pip install nuitka
           pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
-          python -m nuitka --standalone --include-package=torch --include-package=torchvision --jobs=2 --output-dir=temp_build pre_compile.py
+          python -m nuitka --standalone --include-package=torch --include-package=torchvision --jobs=2 --output-dir=temp_build pre_build.py
       - name: Save Cache
         if: always()
         uses: actions/cache/save@v4
@@ -64,7 +64,7 @@ jobs:
           PRE_TARGET: qt
         run: |
           pip install nuitka PyQt6
-          python -m nuitka --standalone --include-package=PyQt6 --jobs=2 --output-dir=temp_build pre_compile.py
+          python -m nuitka --standalone --include-package=PyQt6 --jobs=2 --output-dir=temp_build pre_build.py
       - name: Save
         if: always()
         uses: actions/cache/save@v4
@@ -96,7 +96,7 @@ jobs:
           PRE_TARGET: sci
         run: |
           pip install nuitka numpy rasterio scipy scikit-image
-          python -m nuitka --standalone --include-package=numpy --include-package=rasterio --include-package=scipy --include-package=skimage --jobs=2 --output-dir=temp_build pre_compile.py
+          python -m nuitka --standalone --include-package=numpy --include-package=rasterio --include-package=scipy --include-package=skimage --jobs=2 --output-dir=temp_build pre_build.py
       - name: Save
         if: always()
         uses: actions/cache/save@v4
@@ -129,7 +129,7 @@ jobs:
         run: |
           pip install nuitka
           pip install https://github.com/cgohlke/geospatial-wheels/releases/download/v2025.10.25/GDAL-3.11.4-cp312-cp312-win_amd64.whl
-          python -m nuitka --standalone --include-package=osgeo --jobs=2 --output-dir=temp_build pre_compile.py
+          python -m nuitka --standalone --include-package=osgeo --jobs=2 --output-dir=temp_build pre_build.py
       - name: Save
         if: always()
         uses: actions/cache/save@v4
