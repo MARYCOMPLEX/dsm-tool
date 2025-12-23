@@ -1,89 +1,20 @@
-name: Build GPU-Enabled DSM Tool (Multi-Stage)
+name: Build GPU-Enabled DSM Tool
 
 on:
   workflow_dispatch:
 
 env:
+  # 保持你原有的环境变量
   NUITKA_CACHE_DIR: ${{ github.workspace }}\.nuitka_cache
   CLCACHE_DIR: ${{ github.workspace }}\.clcache
   PYTHONUTF8: "1"
   PYTHONIOENCODING: "utf-8"
-  CACHE_KEY_BASE: nuitka-gpu-v1-py312-${{ hashFiles('requirements-ci.txt') }}
+  # 定义一个基础 Key 方便引用
+  BASE_CACHE_KEY: nuitka-${{ runner.os }}-py312-${{ hashFiles('requirements-ci.txt') }}
 
 jobs:
-  # --- 1. 预编译 Torch ---
-  pre-compile-torch:
-    runs-on: windows-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install requirements
-        run: |
-          python -m pip install -U pip
-          pip install -r requirements-ci.txt
-          pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
-      - name: Restore Cache
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            .nuitka_cache
-            .clcache
-          key: ${{ env.CACHE_KEY_BASE }}-torch
-          restore-keys: ${{ env.CACHE_KEY_BASE }}-
-      - name: Compile Torch Cache
-        # 使用 stop-after-stage 刷出缓存，pre_compile.py 需存在于仓库
-        run: python -m nuitka --standalone --stop-after-stage=c_compilation --include-package=torch --jobs=2 pre_compile.py torch
-      - name: Save Cache
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            .nuitka_cache
-            .clcache
-          key: ${{ env.CACHE_KEY_BASE }}-torch
-
-  # --- 2. 预编译 Scientific & UI (基于 Torch 缓存) ---
-  pre-compile-libs:
-    needs: pre-compile-torch
-    runs-on: windows-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install requirements
-        run: |
-          python -m pip install -U pip
-          pip install -r requirements-ci.txt
-          pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
-          pip install https://github.com/cgohlke/geospatial-wheels/releases/download/v2025.10.25/GDAL-3.11.4-cp312-cp312-win_amd64.whl
-      - name: Restore Torch Cache
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            .nuitka_cache
-            .clcache
-          key: ${{ env.CACHE_KEY_BASE }}-libs
-          restore-keys: ${{ env.CACHE_KEY_BASE }}-torch
-      - name: Compile Libs Cache
-        # 增加科学计算和UI包的编译缓存
-        run: python -m nuitka --standalone --stop-after-stage=c_compilation --include-package=numpy --include-package=rasterio --include-package=PyQt6 --jobs=2 pre_compile.py sci
-      - name: Save Cache
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            .nuitka_cache
-            .clcache
-          key: ${{ env.CACHE_KEY_BASE }}-libs
-
-  # --- 3. 最终打包任务 ---
-  final-build:
-    needs: pre-compile-libs
+  # --- 第一阶段：预编译 Torch ---
+  pre-build-torch:
     runs-on: windows-latest
     steps:
       - name: Maximize Build Space
@@ -100,16 +31,109 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Restore Libs Cache
+      - name: Restore Cache
         uses: actions/cache/restore@v4
         with:
           path: |
             .nuitka_cache
             .clcache
-          key: ${{ env.CACHE_KEY_BASE }}-final-${{ github.run_id }}
-          restore-keys: ${{ env.CACHE_KEY_BASE }}-libs
+          key: ${{ env.BASE_CACHE_KEY }}-torch
+          restore-keys: ${{ env.BASE_CACHE_KEY }}-
 
-      - name: Install All requirements
+      - name: Install Torch
+        shell: pwsh
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements-ci.txt
+          pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+
+      - name: Warmup Torch Cache
+        shell: pwsh
+        run: python -m nuitka --standalone --stop-after-stage=c_compilation --include-package=torch --jobs=2 pre_compile.py torch
+
+      - name: Save Torch Cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .nuitka_cache
+            .clcache
+          key: ${{ env.BASE_CACHE_KEY }}-torch
+
+  # --- 第二阶段：预编译 其他依赖 (GDAL, Sci, UI) ---
+  pre-build-libs:
+    needs: pre-build-torch
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Restore Torch Cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .nuitka_cache
+            .clcache
+          key: ${{ env.BASE_CACHE_KEY }}-libs
+          restore-keys: ${{ env.BASE_CACHE_KEY }}-torch
+
+      - name: Install All Libs
+        shell: pwsh
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements-ci.txt
+          pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+          pip install https://github.com/cgohlke/geospatial-wheels/releases/download/v2025.10.25/GDAL-3.11.4-cp312-cp312-win_amd64.whl
+
+      - name: Warmup Libs Cache
+        shell: pwsh
+        run: |
+          python -m nuitka --standalone --stop-after-stage=c_compilation --include-package=numpy --include-package=rasterio --include-package=PyQt6 --jobs=2 pre_compile.py sci
+          python -m nuitka --standalone --stop-after-stage=c_compilation --include-package=osgeo --jobs=2 pre_compile.py osgeo
+
+      - name: Save Libs Cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .nuitka_cache
+            .clcache
+          key: ${{ env.BASE_CACHE_KEY }}-libs
+
+  # --- 第三阶段：执行原有的打包逻辑 ---
+  final-build:
+    needs: pre-build-libs
+    runs-on: windows-latest
+    steps:
+      - name: Maximize Build Space
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path "C:\hostedtoolcache\windows\PyPy" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
+          Get-ChildItem -Path "C:\hostedtoolcache\windows\Ruby" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Restore Full Cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .nuitka_cache
+            .clcache
+          key: ${{ env.BASE_CACHE_KEY }}-final-${{ github.run_id }}
+          restore-keys: ${{ env.BASE_CACHE_KEY }}-libs
+
+      - name: Install All requirements (Original Commands)
         shell: pwsh
         run: |
           python -m pip install -U pip
@@ -130,7 +154,7 @@ jobs:
           path: |
             .nuitka_cache
             .clcache
-          key: ${{ env.CACHE_KEY_BASE }}-final-${{ github.run_id }}
+          key: ${{ env.BASE_CACHE_KEY }}-final-${{ github.run_id }}
 
       - name: Zip Result
         shell: pwsh
