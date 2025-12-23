@@ -1,8 +1,8 @@
 # pre_compile.py
 import os, sys
 
-# 根据命令行参数决定引入哪个包
-target = sys.argv[1] if len(sys.argv) > 1 else ""
+# 改为从环境变量 PRE_TARGET 获取参数
+target = os.environ.get("PRE_TARGET", "")
 
 if target == "torch":
     import torch, torchvision

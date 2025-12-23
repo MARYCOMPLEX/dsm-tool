@@ -27,11 +27,12 @@ jobs:
           key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-torch
           restore-keys: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-
       - name: Install & Compile
+        env:
+          PRE_TARGET: torch
         run: |
           pip install nuitka
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
-          # 不再使用 --stop-after，直接打一个 standalone 包来产生缓存
-          python -m nuitka --standalone --include-package=torch --jobs=2 --output-dir=temp_build pre_compile.py torch
+          pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+          python -m nuitka --standalone --include-package=torch --include-package=torchvision --jobs=2 --output-dir=temp_build pre_compile.py
       - name: Save Cache
         if: always()
         uses: actions/cache/save@v4
@@ -59,9 +60,11 @@ jobs:
           key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-ui
           restore-keys: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-torch
       - name: Install & Compile
+        env:
+          PRE_TARGET: qt
         run: |
           pip install nuitka PyQt6
-          python -m nuitka --standalone --include-package=PyQt6 --jobs=2 --output-dir=temp_build pre_compile.py qt
+          python -m nuitka --standalone --include-package=PyQt6 --jobs=2 --output-dir=temp_build pre_compile.py
       - name: Save
         if: always()
         uses: actions/cache/save@v4
@@ -89,9 +92,11 @@ jobs:
           key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-sci
           restore-keys: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-ui
       - name: Install & Compile
+        env:
+          PRE_TARGET: sci
         run: |
-          pip install nuitka numpy rasterio scipy
-          python -m nuitka --standalone --include-package=numpy --include-package=rasterio --jobs=2 --output-dir=temp_build pre_compile.py sci
+          pip install nuitka numpy rasterio scipy scikit-image
+          python -m nuitka --standalone --include-package=numpy --include-package=rasterio --include-package=scipy --include-package=skimage --jobs=2 --output-dir=temp_build pre_compile.py
       - name: Save
         if: always()
         uses: actions/cache/save@v4
@@ -119,10 +124,12 @@ jobs:
           key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-gdal
           restore-keys: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-sci
       - name: Install & Compile
+        env:
+          PRE_TARGET: osgeo
         run: |
           pip install nuitka
           pip install https://github.com/cgohlke/geospatial-wheels/releases/download/v2025.10.25/GDAL-3.11.4-cp312-cp312-win_amd64.whl
-          python -m nuitka --standalone --include-package=osgeo --jobs=2 --output-dir=temp_build pre_compile.py osgeo
+          python -m nuitka --standalone --include-package=osgeo --jobs=2 --output-dir=temp_build pre_compile.py
       - name: Save
         if: always()
         uses: actions/cache/save@v4
