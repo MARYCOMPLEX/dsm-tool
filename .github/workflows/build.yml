@@ -29,14 +29,16 @@ jobs:
           cache: "pip"
           cache-dependency-path: requirements-ci.txt
 
-      - name: Cache Nuitka and clcache
-        uses: actions/cache@v4
+      - name: Restore Nuitka and clcache
+        id: cache_restore
+        uses: actions/cache/restore@v4
         with:
           path: |
             .nuitka_cache
             .clcache
-          key: nuitka-${{ runner.os }}-py312-${{ hashFiles('requirements-ci.txt') }}
+          key: nuitka-${{ runner.os }}-py312-${{ hashFiles('requirements-ci.txt') }}-${{ github.run_id }}
           restore-keys: |
+            nuitka-${{ runner.os }}-py312-${{ hashFiles('requirements-ci.txt') }}-
             nuitka-${{ runner.os }}-py312-
 
       - name: Install requirements
@@ -54,6 +56,17 @@ jobs:
       - name: Run Nuitka Build
         shell: pwsh
         run: python nuitka_build.py
+        env:
+          GITHUB_ACTIONS: true
+
+      - name: Save Nuitka and clcache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .nuitka_cache
+            .clcache
+          key: nuitka-${{ runner.os }}-py312-${{ hashFiles('requirements-ci.txt') }}-${{ github.run_id }}
 
       - name: Zip Result
         shell: pwsh
