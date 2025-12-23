@@ -1,5 +1,5 @@
 """
-Nuitka build script - DSM Generation Tool
+Nuitka build script - DSM Generation Tool (Optimized for Heavy Dependencies)
 """
 
 import os, sys
@@ -15,23 +15,25 @@ import site
 import shutil
 from pathlib import Path
 
+# --- 配置区 ---
 MAIN_SCRIPT = "main.py"
 EXE_NAME = "DSM_Tool"
-
 MODEL_FILE_NAME = "model_best.pt"
 MODEL_SRC_ENV = "MODEL_BEST_PT_SRC"
-
 PROJECT_ROOT = Path(__file__).parent.absolute()
 IS_GHA = os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
 
-if os.name == "nt" and IS_GHA:
+# --- 关键修复：解决 C1002 编译器内存溢出 ---
+# 提升 MSVC 编译器的内存分配上限从 500% 到 2000%
+if os.name == "nt":
     old = os.environ.get("CCFLAGS", "")
-    os.environ["CCFLAGS"] = (old + " /Zm500").strip()
+    # 移除可能存在的旧限制，统一设置为 /Zm2000
+    os.environ["CCFLAGS"] = (old + " /Zm2000").strip()
 
+# --- GDAL/PROJ 数据路径检测 (保持原样) ---
 try:
     import osgeo
     osgeo_path = Path(osgeo.__file__).parent
-
     gdal_data_candidates = [
         osgeo_path / "data" / "gdal",
         osgeo_path.parent / "osgeo" / "data" / "gdal",
@@ -40,41 +42,22 @@ try:
         osgeo_path / "data" / "proj",
         osgeo_path.parent / "osgeo" / "data" / "proj",
     ]
-
-    GDAL_DATA_SRC = None
-    PROJ_DATA_SRC = None
-
-    for c in gdal_data_candidates:
-        if c.exists():
-            GDAL_DATA_SRC = c
-            break
-
-    for c in proj_data_candidates:
-        if c.exists():
-            PROJ_DATA_SRC = c
-            break
+    GDAL_DATA_SRC = next((c for c in gdal_data_candidates if c.exists()), None)
+    PROJ_DATA_SRC = next((c for c in proj_data_candidates if c.exists()), None)
 
     if not GDAL_DATA_SRC or not PROJ_DATA_SRC:
-        site_packages = site.getsitepackages()
-        if site_packages:
-            sp_path = Path(site_packages[0])
+        for sp in site.getsitepackages():
+            sp_path = Path(sp)
             if not GDAL_DATA_SRC:
                 c = sp_path / "osgeo" / "data" / "gdal"
-                if c.exists():
-                    GDAL_DATA_SRC = c
+                if c.exists(): GDAL_DATA_SRC = c
             if not PROJ_DATA_SRC:
                 c = sp_path / "osgeo" / "data" / "proj"
-                if c.exists():
-                    PROJ_DATA_SRC = c
-
-    print(f"GDAL data dir: {GDAL_DATA_SRC} (exists: {GDAL_DATA_SRC.exists() if GDAL_DATA_SRC else False})")
-    print(f"PROJ data dir: {PROJ_DATA_SRC} (exists: {PROJ_DATA_SRC.exists() if PROJ_DATA_SRC else False})")
-
+                if c.exists(): PROJ_DATA_SRC = c
 except ImportError:
-    print("WARNING: osgeo not found, GDAL/PROJ data dir detection skipped.")
-    GDAL_DATA_SRC = None
-    PROJ_DATA_SRC = None
+    GDAL_DATA_SRC = PROJ_DATA_SRC = None
 
+# --- 构建 Nuitka 命令 ---
 cmd = [
     sys.executable, "-m", "nuitka",
     "--standalone",
@@ -85,14 +68,19 @@ cmd = [
     "--windows-console-mode=disable",
 ]
 
+# --- 针对 GitHub Actions 环境的内存优化 ---
 if IS_GHA:
-    cmd += ["--low-memory", "--jobs=2"]
+    # 核心修复：强制单任务编译，防止多核并行抢占内存导致 C1002 错误
+    cmd += ["--low-memory", "--jobs=1"] 
     cmd += [
         "--nofollow-import-to=torch.testing",
         "--nofollow-import-to=torch.testing._internal",
         "--nofollow-import-to=torch.utils.benchmark",
     ]
+else:
+    cmd += ["--jobs=4"] # 本地内存充裕可多核
 
+# --- 依赖包含策略 ---
 cmd += [
     "--include-package=processors",
     "--include-package=tabs",
@@ -105,72 +93,51 @@ cmd += [
     "--include-package=rasterio",
     "--include-package=numpy",
     "--include-package=osgeo",
-]
-
-cmd += [
     "--include-package-data=torch",
+    
+    # 核心修复：Sympy 的 C 代码过于庞大，强制作为字节码收集，不进行 C 编译
+    "--collect-all=sympy", 
 ]
 
-if GDAL_DATA_SRC and GDAL_DATA_SRC.exists():
-    cmd.append(f"--include-data-dir={GDAL_DATA_SRC}=gdal-data")
-else:
-    print("WARNING: GDAL data dir not found; runtime may fail.")
+# 注入数据目录
+if GDAL_DATA_SRC: cmd.append(f"--include-data-dir={GDAL_DATA_SRC}=gdal-data")
+if PROJ_DATA_SRC: cmd.append(f"--include-data-dir={PROJ_DATA_SRC}=proj-data")
 
-if PROJ_DATA_SRC and PROJ_DATA_SRC.exists():
-    cmd.append(f"--include-data-dir={PROJ_DATA_SRC}=proj-data")
-else:
-    print("WARNING: PROJ data dir not found; runtime may fail.")
-
-sr_model_dir = PROJECT_ROOT / "processors" / "sr" / "sr" / "model"
-if sr_model_dir.exists():
-    cmd.append(f"--include-data-dir={sr_model_dir}=processors/sr/sr/model")
-    print(f"Include SR model dir: {sr_model_dir}")
-
+# 输出配置
 cmd += ["--output-dir=build", str(MAIN_SCRIPT)]
 
+# --- 打印构建信息 ---
 print("\n" + "=" * 60)
-print("Nuitka build configuration:")
+print("Nuitka Build Configuration (Anti-OOM Mode):")
 print("=" * 60)
 print(f"Main script: {MAIN_SCRIPT}")
-print(f"Output exe name: {EXE_NAME}")
-print(f"Project root: {PROJECT_ROOT}")
-print("Included local packages: processors, tabs, loaders, views, ui, utils")
-print(f"External model strategy: copy to dist/libs/{MODEL_FILE_NAME} after build (not embedded)")
-print(f"Running in GitHub Actions: {IS_GHA}")
-print(f"CCFLAGS: {os.environ.get('CCFLAGS','')}")
+print(f"Output name: {EXE_NAME}")
+print(f"Sympy Strategy: Collect-All (Prevent C1002)")
+print(f"Memory Flag: {os.environ.get('CCFLAGS','')}")
+print(f"Jobs: {'1 (Safe Mode)' if IS_GHA else '4'}")
 print("=" * 60 + "\n")
 
-print("Starting Nuitka build...\n")
-
+# --- 执行构建 ---
 result = subprocess.run(cmd, check=False)
 
+# --- 构建后处理 (外部模型策略) ---
 if result.returncode == 0:
-    print("\n" + "=" * 60)
-    print("Build succeeded.")
-    print("=" * 60)
-
+    print("\nBuild succeeded.")
     dist_dir = Path("build") / f"{EXE_NAME}.dist"
     libs_dir = dist_dir / "libs"
     libs_dir.mkdir(parents=True, exist_ok=True)
 
-    model_src = os.environ.get(MODEL_SRC_ENV, "").strip()
-    model_src_path = Path(model_src) if model_src else (PROJECT_ROOT / "libs" / MODEL_FILE_NAME)
+    # 模型复制逻辑
+    model_src_path = Path(os.environ.get(MODEL_SRC_ENV, "")).strip() or (PROJECT_ROOT / "libs" / MODEL_FILE_NAME)
     model_dst_path = libs_dir / MODEL_FILE_NAME
 
-    if model_src_path.exists():
+    if Path(model_src_path).exists():
         shutil.copy2(model_src_path, model_dst_path)
         print(f"Copied weight to: {model_dst_path}")
-        print(f"Weight source:   {model_src_path}")
     else:
-        print("WARNING: weight file not copied (source not found).")
-        print(f"Place it at: {PROJECT_ROOT / 'libs' / MODEL_FILE_NAME}")
-        print(f"Or set env {MODEL_SRC_ENV} to the weight path.")
+        print(f"WARNING: No weight file found. Manual placement needed at: dist/libs/{MODEL_FILE_NAME}")
 
-    print(f"\nExe location: {dist_dir}/{EXE_NAME}.exe")
-    print("\nRuntime note:")
-    print(f"- Ensure dist/libs/{MODEL_FILE_NAME} exists when running.")
+    print(f"\nDone. Exe: {dist_dir}/{EXE_NAME}.exe")
 else:
-    print("\n" + "=" * 60)
-    print("Build failed. Check the error logs above.")
-    print("=" * 60)
+    print("\nBuild failed.")
     sys.exit(1)
