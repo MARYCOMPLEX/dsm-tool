@@ -8,9 +8,9 @@ env:
   CLCACHE_DIR: ${{ github.workspace }}\.clcache
   PYTHONUTF8: "1"
   PYTHONIOENCODING: "utf-8"
+  CL: "/Zm500"
 
 jobs:
-  # --- 1. Torch 预编译 ---
   pre-torch:
     runs-on: windows-latest
     steps:
@@ -25,14 +25,16 @@ jobs:
             .nuitka_cache
             .clcache
           key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-torch
-          restore-keys: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-
+          restore-keys: |
+            nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-
       - name: Install & Compile
         env:
           PRE_TARGET: torch
         run: |
-          pip install nuitka
+          python -m pip install -U pip
+          pip install -U nuitka
           pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
-          python -m nuitka --standalone --include-package=torch --include-package=torchvision --jobs=2 --output-dir=temp_build pre_build.py
+          python -m nuitka --standalone --jobs=2 --output-dir=temp_build pre_build.py
       - name: Save Cache
         if: always()
         uses: actions/cache/save@v4
@@ -42,7 +44,6 @@ jobs:
             .clcache
           key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-torch
 
-  # --- 2. UI 预编译 ---
   pre-ui:
     needs: pre-torch
     runs-on: windows-latest
@@ -58,13 +59,15 @@ jobs:
             .nuitka_cache
             .clcache
           key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-ui
-          restore-keys: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-torch
+          restore-keys: |
+            nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-torch
       - name: Install & Compile
         env:
           PRE_TARGET: qt
         run: |
-          pip install nuitka PyQt6
-          python -m nuitka --standalone --include-package=PyQt6 --jobs=2 --output-dir=temp_build pre_build.py
+          python -m pip install -U pip
+          pip install -U nuitka PyQt6
+          python -m nuitka --standalone --jobs=2 --output-dir=temp_build pre_build.py
       - name: Save
         if: always()
         uses: actions/cache/save@v4
@@ -74,7 +77,6 @@ jobs:
             .clcache
           key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-ui
 
-  # --- 3. Scientific 预编译 ---
   pre-sci:
     needs: pre-ui
     runs-on: windows-latest
@@ -90,13 +92,15 @@ jobs:
             .nuitka_cache
             .clcache
           key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-sci
-          restore-keys: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-ui
+          restore-keys: |
+            nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-ui
       - name: Install & Compile
         env:
           PRE_TARGET: sci
         run: |
-          pip install nuitka numpy rasterio scipy scikit-image
-          python -m nuitka --standalone --include-package=numpy --include-package=rasterio --include-package=scipy --include-package=skimage --jobs=2 --output-dir=temp_build pre_build.py
+          python -m pip install -U pip
+          pip install -U nuitka numpy rasterio scipy scikit-image
+          python -m nuitka --standalone --jobs=2 --output-dir=temp_build pre_build.py
       - name: Save
         if: always()
         uses: actions/cache/save@v4
@@ -106,7 +110,6 @@ jobs:
             .clcache
           key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-sci
 
-  # --- 4. GDAL 预编译 ---
   pre-gdal:
     needs: pre-sci
     runs-on: windows-latest
@@ -122,14 +125,16 @@ jobs:
             .nuitka_cache
             .clcache
           key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-gdal
-          restore-keys: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-sci
+          restore-keys: |
+            nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-sci
       - name: Install & Compile
         env:
           PRE_TARGET: osgeo
         run: |
-          pip install nuitka
+          python -m pip install -U pip
+          pip install -U nuitka
           pip install https://github.com/cgohlke/geospatial-wheels/releases/download/v2025.10.25/GDAL-3.11.4-cp312-cp312-win_amd64.whl
-          python -m nuitka --standalone --include-package=osgeo --jobs=2 --output-dir=temp_build pre_build.py
+          python -m nuitka --standalone --jobs=2 --output-dir=temp_build pre_build.py
       - name: Save
         if: always()
         uses: actions/cache/save@v4
@@ -139,7 +144,6 @@ jobs:
             .clcache
           key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-gdal
 
-  # --- 5. 最终打包 ---
   final-build:
     needs: pre-gdal
     runs-on: windows-latest
@@ -159,12 +163,15 @@ jobs:
           path: |
             .nuitka_cache
             .clcache
-          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-final-${{ github.run_id }}
-          restore-keys: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-gdal
+          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'nuitka_build.py') }}-final
+          restore-keys: |
+            nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'nuitka_build.py') }}-
+            nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-gdal
       - name: Install All requirements
         shell: pwsh
         run: |
           python -m pip install -U pip
+          pip install -U nuitka
           pip install -r requirements-ci.txt
           pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
           pip install https://github.com/cgohlke/geospatial-wheels/releases/download/v2025.10.25/GDAL-3.11.4-cp312-cp312-win_amd64.whl
@@ -180,7 +187,7 @@ jobs:
           path: |
             .nuitka_cache
             .clcache
-          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt') }}-final-${{ github.run_id }}
+          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'nuitka_build.py') }}-final
       - name: Zip & Upload
         shell: pwsh
         run: Compress-Archive -Path "build/DSM_Tool.dist/*" -DestinationPath "DSM_Tool_GPU_v1.0.zip"
