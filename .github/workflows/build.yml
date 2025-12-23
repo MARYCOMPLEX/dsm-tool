@@ -20,9 +20,10 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install
-        run: |
-          pip install nuitka
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124- name: Cache
+        run: | 
+          pip install nuitka 
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+      - name: Cache
         uses: actions/cache@v4
         with:
           path: ${{ env.CACHE_PATH }}
