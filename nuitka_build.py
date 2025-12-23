@@ -127,6 +127,7 @@ if sr_model_dir.exists():
     print(f"Include SR model dir: {sr_model_dir}")
 
 cmd += ["--output-dir=build", str(MAIN_SCRIPT)]
+cmd += ["--output-dir=build", str(MAIN_SCRIPT)]
 
 print("\n" + "=" * 60)
 print("Nuitka build configuration:")
@@ -167,6 +168,8 @@ if result.returncode == 0:
         print(f"Or set env {MODEL_SRC_ENV} to the weight path.")
 
     print(f"\nExe location: {dist_dir}/{EXE_NAME}.exe")
+    print("\nRuntime note:")
+    print(f"- Ensure dist/libs/{MODEL_FILE_NAME} exists when running.")
 else:
     print("\n" + "=" * 60)
     print("Build failed. Check the error logs above.")
