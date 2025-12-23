@@ -1,9 +1,7 @@
 name: Multi-Stage Turbo Cache Build
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
 
 # 通用缓存配置模板
 env:
