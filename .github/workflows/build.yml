@@ -1,81 +1,100 @@
-name: Build GPU-Enabled DSM Tool
+name: Multi-Stage Turbo Cache Build
 
 on:
-  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+# 通用缓存配置模板
+env:
+  CACHE_PATH: |
+    ~/.cache/nuitka
+    ~/AppData/Local/Nuitka/Nuitka/Cache
+  CACHE_KEY_PREFIX: nuitka-v1-py312
 
 jobs:
-  build:
+  # --- 阶段 1: 编译 Torch (耗时最长，独立出来) ---
+  pre-torch:
     runs-on: windows-latest
-    env:
-      NUITKA_CACHE_DIR: ${{ github.workspace }}\.nuitka_cache
-      CLCACHE_DIR: ${{ github.workspace }}\.clcache
-      PYTHONUTF8: "1"
-      PYTHONIOENCODING: "utf-8"
-
     steps:
-      - name: Maximize Build Space
-        shell: pwsh
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: pip install nuitka torch torchvision --index-url https://download.pytorch.org/whl/cu124
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CACHE_PATH }}
+          key: ${{ env.CACHE_KEY_PREFIX }}-torch
+      - name: Compile Torch
+        run: python -m nuitka --standalone --compile-only --include-package=torch --jobs=2 pre_compile.py torch
+
+  # --- 阶段 2: 编译 科学计算包 (并行执行) ---
+  pre-sci:
+    needs: pre-torch # 继承 Torch 的缓存基础
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: pip install nuitka numpy rasterio scipy scikit-image
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CACHE_PATH }}
+          key: ${{ env.CACHE_KEY_PREFIX }}-sci
+          restore-keys: ${{ env.CACHE_KEY_PREFIX }}-torch
+      - name: Compile Sci
+        run: python -m nuitka --standalone --compile-only --include-package=numpy --include-package=rasterio --jobs=2 pre_compile.py sci
+
+  # --- 阶段 3: 编译 UI 和 GDAL (并行执行) ---
+  pre-ui-gdal:
+    needs: pre-torch
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: pip install nuitka PyQt6 ./libs/GDAL-3.11.4-cp312-cp312-win_amd64.whl
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CACHE_PATH }}
+          key: ${{ env.CACHE_KEY_PREFIX }}-ui-gdal
+          restore-keys: ${{ env.CACHE_KEY_PREFIX }}-torch
+      - name: Compile UI/GDAL
+        run: python -m nuitka --standalone --compile-only --include-package=PyQt6 --include-package=osgeo --jobs=2 pre_compile.py qt
+
+  # --- 阶段 4: 终极汇总打包 ---
+  final-build:
+    needs: [pre-sci, pre-ui-gdal]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install All
         run: |
-          Get-ChildItem -Path "C:\hostedtoolcache\windows\PyPy" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
-          Get-ChildItem -Path "C:\hostedtoolcache\windows\Ruby" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
-
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+          pip install nuitka torch torchvision --index-url https://download.pytorch.org/whl/cu124
+          pip install PyQt6 numpy rasterio scipy scikit-image matplotlib einops tifffile opencv-python
+          pip install ./libs/GDAL-3.11.4-cp312-cp312-win_amd64.whl
+      - name: Restore Global Cache
+        uses: actions/cache@v4
         with:
-          python-version: "3.12"
-          cache: "pip"
-          cache-dependency-path: requirements-ci.txt
-
-      - name: Restore Nuitka and clcache
-        id: cache_restore
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            .nuitka_cache
-            .clcache
-          key: nuitka-${{ runner.os }}-py312-${{ hashFiles('requirements-ci.txt') }}-${{ github.run_id }}
+          path: ${{ env.CACHE_PATH }}
+          key: ${{ env.CACHE_KEY_PREFIX }}-final-${{ github.sha }}
           restore-keys: |
-            nuitka-${{ runner.os }}-py312-${{ hashFiles('requirements-ci.txt') }}-
-            nuitka-${{ runner.os }}-py312-
-
-      - name: Install requirements
-        shell: pwsh
-        run: |
-          python -m pip install -U pip
-          pip install -r requirements-ci.txt
-
-      - name: Install CUDA Torch and GDAL
-        shell: pwsh
-        run: |
-          pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
-          pip install https://github.com/cgohlke/geospatial-wheels/releases/download/v2025.10.25/GDAL-3.11.4-cp312-cp312-win_amd64.whl
-
-      - name: Run Nuitka Build
-        shell: pwsh
+            ${{ env.CACHE_KEY_PREFIX }}-sci
+            ${{ env.CACHE_KEY_PREFIX }}-ui-gdal
+            ${{ env.CACHE_KEY_PREFIX }}-torch
+      - name: Final Build
         run: python nuitka_build.py
         env:
           GITHUB_ACTIONS: true
-
-      - name: Save Nuitka and clcache
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            .nuitka_cache
-            .clcache
-          key: nuitka-${{ runner.os }}-py312-${{ hashFiles('requirements-ci.txt') }}-${{ github.run_id }}
-
-      - name: Zip Result
-        shell: pwsh
-        run: |
-          Compress-Archive -Path "build/DSM_Tool.dist/*" -DestinationPath "DSM_Tool_GPU_v1.0.zip"
-
-      - name: Upload Binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: DSM_Tool_GPU_Binary
-          path: DSM_Tool_GPU_v1.0.zip
-          retention-days: 5
