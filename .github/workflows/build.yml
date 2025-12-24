@@ -45,13 +45,13 @@ jobs:
         shell: pwsh
         run: |
           $env:PRE_TARGET="qt"
-          python -m nuitka --standalone --jobs=2 --output-dir=temp_build --assume-yes-for-downloads pre_build.py
+          python -m nuitka --standalone --jobs=2 --output-dir=temp_build pre_build.py
           $env:PRE_TARGET="sci"
-          python -m nuitka --standalone --jobs=2 --output-dir=temp_build --assume-yes-for-downloads pre_build.py
+          python -m nuitka --standalone --jobs=2 --output-dir=temp_build pre_build.py
           $env:PRE_TARGET="osgeo"
-          python -m nuitka --standalone --jobs=2 --output-dir=temp_build --assume-yes-for-downloads pre_build.py
+          python -m nuitka --standalone --jobs=2 --output-dir=temp_build pre_build.py
           $env:PRE_TARGET="misc"
-          python -m nuitka --standalone --jobs=2 --output-dir=temp_build --assume-yes-for-downloads pre_build.py
+          python -m nuitka --standalone --jobs=2 --output-dir=temp_build pre_build.py
       - name: Save Cache
         if: always()
         uses: actions/cache/save@v4
@@ -59,7 +59,7 @@ jobs:
           path: |
             .nuitka_cache
             .clcache
-          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'pre_build.py') }}-lite
+          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'pre_build.py') }}-lite-${{ github.run_id }}
 
   final-lite:
     needs: pre-lite
@@ -91,7 +91,7 @@ jobs:
         env:
           GITHUB_ACTIONS: true
           BUILD_PROFILE: lite
-        run: python nuitka_build.py --assume-yes-for-downloads
+        run: python nuitka_build.py
       - name: Zip & Upload (lite)
         shell: pwsh
         run: |
@@ -133,7 +133,7 @@ jobs:
         shell: pwsh
         run: |
           $env:PRE_TARGET="torch"
-          python -m nuitka --standalone --jobs=2 --output-dir=temp_build --assume-yes-for-downloads pre_build.py
+          python -m nuitka --standalone --jobs=2 --output-dir=temp_build pre_build.py
       - name: Save Cache
         if: always()
         uses: actions/cache/save@v4
@@ -141,7 +141,7 @@ jobs:
           path: |
             .nuitka_cache
             .clcache
-          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'pre_build.py') }}-heavy
+          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'pre_build.py') }}-heavy-${{ github.run_id }}
 
   final-full:
     needs: pre-heavy-torch
@@ -176,7 +176,7 @@ jobs:
         env:
           GITHUB_ACTIONS: true
           BUILD_PROFILE: full
-        run: python nuitka_build.py --assume-yes-for-downloads
+        run: python nuitka_build.py
       - name: Zip & Upload (full)
         shell: pwsh
         run: |
