@@ -41,6 +41,7 @@ except ImportError:
 cmd = [
     sys.executable, "-m", "nuitka",
     "--standalone",
+    "--assume-yes-for-downloads",
     f"--output-filename={EXE_NAME}",
     "--show-progress",
     "--show-memory",
