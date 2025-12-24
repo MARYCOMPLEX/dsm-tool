@@ -1,4 +1,4 @@
-name: Build DSM Tool
+name: Build DSM Tool (Ultra Cache: Lite first)
 
 on:
   workflow_dispatch:
@@ -9,16 +9,13 @@ on:
         default: false
 
 env:
-  # ---- Core caches (all under workspace for caching) ----
   NUITKA_CACHE_DIR: ${{ github.workspace }}\.nuitka_cache
   CLCACHE_DIR: ${{ github.workspace }}\.clcache
   PIP_CACHE_DIR: ${{ github.workspace }}\.pip_cache
 
-  # ---- Runtime ----
   PYTHONUTF8: "1"
   PYTHONIOENCODING: "utf-8"
 
-  # ---- Build speed/stability ----
   CL: "/Zm2000"
   NUITKA_CLCACHE: "1"
   CLCACHE_HARDLINK: "1"
@@ -77,12 +74,11 @@ jobs:
         shell: pwsh
         run: |
           $venv = ".venv_lite"
-          if (!(Test-Path "$venv\Scripts\python.exe")) {
-            python -m venv $venv
-          }
+          if (!(Test-Path "$venv\Scripts\python.exe")) { python -m venv $venv }
 
           $depsId = "$( (Get-FileHash requirements-ci.txt).Hash )-$( (Get-FileHash pre_build.py).Hash )-$( (Get-FileHash nuitka_build.py).Hash )-lite-gdal3114"
           $stamp = "$venv\.deps_stamp"
+
           $needInstall = $true
           if (Test-Path $stamp) {
             $old = (Get-Content $stamp -ErrorAction SilentlyContinue)
@@ -191,8 +187,10 @@ jobs:
         run: |
           $venv = ".venv_lite"
           if (!(Test-Path "$venv\Scripts\python.exe")) { python -m venv $venv }
+
           $depsId = "$( (Get-FileHash requirements-ci.txt).Hash )-$( (Get-FileHash pre_build.py).Hash )-$( (Get-FileHash nuitka_build.py).Hash )-lite-gdal3114"
           $stamp = "$venv\.deps_stamp"
+
           if (!(Test-Path $stamp) -or ((Get-Content $stamp) -ne $depsId)) {
             & "$venv\Scripts\python.exe" -m pip install -U pip --cache-dir "$env:PIP_CACHE_DIR"
             & "$venv\Scripts\python.exe" -m pip install -U nuitka clcache --cache-dir "$env:PIP_CACHE_DIR"
@@ -313,6 +311,7 @@ jobs:
 
           $depsId = "$( (Get-FileHash requirements-ci.txt).Hash )-$( (Get-FileHash pre_build.py).Hash )-$( (Get-FileHash nuitka_build.py).Hash )-full-torch-cu124-gdal3114"
           $stamp = "$venv\.deps_stamp"
+
           $needInstall = $true
           if (Test-Path $stamp) {
             $old = (Get-Content $stamp -ErrorAction SilentlyContinue)
@@ -330,12 +329,23 @@ jobs:
             Write-Host "Deps stamp matched, skip pip install."
           }
 
-      - name: Pre-compile torch (Nuitka, non-interactive)
+      - name: Pre-compile torch (Nuitka, non-interactive, avoid sympy)
         shell: pwsh
         run: |
           $py = ".venv_full\Scripts\python.exe"
           $env:PRE_TARGET="torch"
-          & $py -m nuitka --standalone --jobs=2 --output-dir=temp_build --assume-yes-for-downloads pre_build.py
+          & $py -m nuitka --standalone --jobs=2 --output-dir=temp_build --assume-yes-for-downloads `
+            --nofollow-import-to=sympy `
+            --nofollow-import-to=torch._dynamo `
+            --nofollow-import-to=torch._inductor `
+            --nofollow-import-to=torch._functorch `
+            --nofollow-import-to=torch.fx `
+            --nofollow-import-to=torch.compiler `
+            --nofollow-import-to=torch.onnx `
+            --nofollow-import-to=torch.distributed `
+            --nofollow-import-to=torch.testing `
+            --nofollow-import-to=torch.utils.benchmark `
+            pre_build.py
 
       - name: Save pip cache (pre-heavy-torch)
         if: always()
@@ -417,8 +427,10 @@ jobs:
         run: |
           $venv = ".venv_full"
           if (!(Test-Path "$venv\Scripts\python.exe")) { python -m venv $venv }
+
           $depsId = "$( (Get-FileHash requirements-ci.txt).Hash )-$( (Get-FileHash pre_build.py).Hash )-$( (Get-FileHash nuitka_build.py).Hash )-full-torch-cu124-gdal3114"
           $stamp = "$venv\.deps_stamp"
+
           if (!(Test-Path $stamp) -or ((Get-Content $stamp) -ne $depsId)) {
             & "$venv\Scripts\python.exe" -m pip install -U pip --cache-dir "$env:PIP_CACHE_DIR"
             & "$venv\Scripts\python.exe" -m pip install -U nuitka clcache --cache-dir "$env:PIP_CACHE_DIR"
