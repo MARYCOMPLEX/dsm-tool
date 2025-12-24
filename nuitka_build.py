@@ -108,7 +108,7 @@ result = subprocess.run(cmd, check=False)
 
 # --- 构建后处理 ---
 if result.returncode == 0:
-    dist_dir = Path("build") / f"{EXE_NAME}.dist"
+    dist_dir = Path("build") / f"main.dist"
     libs_dir = dist_dir / "libs"
     libs_dir.mkdir(parents=True, exist_ok=True)
 
