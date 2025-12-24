@@ -23,6 +23,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: Restore Cache
         uses: actions/cache/restore@v4
         with:
@@ -33,6 +34,7 @@ jobs:
           restore-keys: |
             nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'pre_build.py') }}-
             nuitka-Win-py312-
+
       - name: Install deps (lite)
         shell: pwsh
         run: |
@@ -41,6 +43,7 @@ jobs:
           pip install PyQt6
           pip install numpy rasterio scipy scikit-image matplotlib einops tifffile opencv-python
           pip install https://github.com/cgohlke/geospatial-wheels/releases/download/v2025.10.25/GDAL-3.11.4-cp312-cp312-win_amd64.whl
+
       - name: Pre-compile lite packages
         shell: pwsh
         run: |
@@ -52,7 +55,8 @@ jobs:
           python -m nuitka --standalone --jobs=2 --output-dir=temp_build --assume-yes-for-downloads pre_build.py
           $env:PRE_TARGET="misc"
           python -m nuitka --standalone --jobs=2 --output-dir=temp_build --assume-yes-for-downloads pre_build.py
-      - name: Save Cache
+
+      - name: Save Cache (pre-lite)
         if: always()
         uses: actions/cache/save@v4
         with:
@@ -69,16 +73,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: Restore Cache
         uses: actions/cache/restore@v4
         with:
           path: |
             .nuitka_cache
             .clcache
-          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'pre_build.py') }}-lite
+          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'pre_build.py') }}-lite-${{ github.run_id }}
           restore-keys: |
+            nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'pre_build.py') }}-lite-
             nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'pre_build.py') }}-
             nuitka-Win-py312-
+
       - name: Install All requirements (lite)
         shell: pwsh
         run: |
@@ -86,16 +93,28 @@ jobs:
           pip install -U nuitka
           pip install -r requirements-ci.txt
           pip install https://github.com/cgohlke/geospatial-wheels/releases/download/v2025.10.25/GDAL-3.11.4-cp312-cp312-win_amd64.whl
+
       - name: Run Nuitka Build (lite)
         shell: pwsh
         env:
           GITHUB_ACTIONS: true
           BUILD_PROFILE: lite
         run: python nuitka_build.py
+
+      - name: Save Cache (final-lite)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .nuitka_cache
+            .clcache
+          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'pre_build.py') }}-final-lite-${{ github.run_id }}
+
       - name: Zip & Upload (lite)
         shell: pwsh
         run: |
           Compress-Archive -Path "build/DSM_Tool.dist/*" -DestinationPath "DSM_Tool_LITE.zip"
+
       - name: Upload Artifact (lite)
         uses: actions/upload-artifact@v4
         with:
@@ -112,29 +131,38 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: Restore Cache
         uses: actions/cache/restore@v4
         with:
           path: |
             .nuitka_cache
             .clcache
-          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'pre_build.py') }}-heavy
+          # ✅ 优先命中本次 run 的 heavy cache（如果本次重跑 heavy）
+          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'pre_build.py') }}-heavy-${{ github.run_id }}
           restore-keys: |
-            nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'pre_build.py') }}-lite
+            # ✅ 其次命中本次 run 的 final-lite（里面含最新 .nuitka_cache/.clcache）
+            nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'pre_build.py') }}-final-lite-${{ github.run_id }}
+            # ✅ 再其次命中本次 run 的 pre-lite
+            nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'pre_build.py') }}-lite-${{ github.run_id }}
+            # ✅ 最后回退到任意旧缓存
             nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'pre_build.py') }}-
             nuitka-Win-py312-
+
       - name: Install torch (heavy)
         shell: pwsh
         run: |
           python -m pip install -U pip
           pip install -U nuitka
           pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+
       - name: Pre-compile torch (no include-package)
         shell: pwsh
         run: |
           $env:PRE_TARGET="torch"
           python -m nuitka --standalone --jobs=2 --output-dir=temp_build --assume-yes-for-downloads pre_build.py
-      - name: Save Cache
+
+      - name: Save Cache (pre-heavy-torch)
         if: always()
         uses: actions/cache/save@v4
         with:
@@ -152,17 +180,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: Restore Cache
         uses: actions/cache/restore@v4
         with:
           path: |
             .nuitka_cache
             .clcache
-          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'pre_build.py') }}-heavy
+          key: nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'pre_build.py') }}-heavy-${{ github.run_id }}
           restore-keys: |
-            nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'pre_build.py') }}-lite
+            nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'pre_build.py') }}-heavy-
+            nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'pre_build.py') }}-final-lite-
+            nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'pre_build.py') }}-lite-
             nuitka-Win-py312-${{ hashFiles('requirements-ci.txt', 'pre_build.py') }}-
             nuitka-Win-py312-
+
       - name: Install All requirements (full)
         shell: pwsh
         run: |
@@ -171,16 +203,19 @@ jobs:
           pip install -r requirements-ci.txt
           pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
           pip install https://github.com/cgohlke/geospatial-wheels/releases/download/v2025.10.25/GDAL-3.11.4-cp312-cp312-win_amd64.whl
+
       - name: Run Nuitka Build (full)
         shell: pwsh
         env:
           GITHUB_ACTIONS: true
           BUILD_PROFILE: full
         run: python nuitka_build.py
+
       - name: Zip & Upload (full)
         shell: pwsh
         run: |
           Compress-Archive -Path "build/DSM_Tool.dist/*" -DestinationPath "DSM_Tool_FULL.zip"
+
       - name: Upload Artifact (full)
         uses: actions/upload-artifact@v4
         with:
