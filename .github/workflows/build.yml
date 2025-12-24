@@ -1,4 +1,4 @@
-name: Build DSM Tool (Ultra Cache: Lite first)
+name: Build DSM Tool 
 
 on:
   workflow_dispatch:
