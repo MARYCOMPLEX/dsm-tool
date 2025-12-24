@@ -45,13 +45,13 @@ jobs:
         shell: pwsh
         run: |
           $env:PRE_TARGET="qt"
-          python -m nuitka --standalone --jobs=2 --output-dir=temp_build pre_build.py
+          python -m nuitka --standalone --jobs=2 --output-dir=temp_build --assume-yes-for-downloads pre_build.py
           $env:PRE_TARGET="sci"
-          python -m nuitka --standalone --jobs=2 --output-dir=temp_build pre_build.py
+          python -m nuitka --standalone --jobs=2 --output-dir=temp_build --assume-yes-for-downloads pre_build.py
           $env:PRE_TARGET="osgeo"
-          python -m nuitka --standalone --jobs=2 --output-dir=temp_build pre_build.py
+          python -m nuitka --standalone --jobs=2 --output-dir=temp_build --assume-yes-for-downloads pre_build.py
           $env:PRE_TARGET="misc"
-          python -m nuitka --standalone --jobs=2 --output-dir=temp_build pre_build.py
+          python -m nuitka --standalone --jobs=2 --output-dir=temp_build --assume-yes-for-downloads pre_build.py
       - name: Save Cache
         if: always()
         uses: actions/cache/save@v4
@@ -133,7 +133,7 @@ jobs:
         shell: pwsh
         run: |
           $env:PRE_TARGET="torch"
-          python -m nuitka --standalone --jobs=2 --output-dir=temp_build pre_build.py
+          python -m nuitka --standalone --jobs=2 --output-dir=temp_build --assume-yes-for-downloads pre_build.py
       - name: Save Cache
         if: always()
         uses: actions/cache/save@v4
