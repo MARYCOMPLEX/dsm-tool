@@ -5,8 +5,8 @@ zstandard
 
 PyQt6
 numpy
-rasterio
 scikit-image
+rasterio
 scipy
 matplotlib
 einops

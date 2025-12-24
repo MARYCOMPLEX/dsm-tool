@@ -49,13 +49,14 @@ class MainWindow(QMainWindow):
     - Processor selection and execution
     - Progress tracking
     """
-    
+    _language: str
+
     def __init__(self):
         """Initialize the main window."""
         super().__init__()
 
         # Language: 'en' or 'zh'
-        self._language: str = "en"
+        self._language: str = "zh"
 
         self._image1_path: Optional[str] = None
         self._image2_path: Optional[str] = None
@@ -163,8 +164,8 @@ class MainWindow(QMainWindow):
         lang_row = QHBoxLayout()
         self._lang_label = QLabel()
         self._lang_combo = QComboBox()
-        self._lang_combo.addItem("English", "en")
         self._lang_combo.addItem("中文", "zh")
+        self._lang_combo.addItem("English", "en")
         self._lang_combo.currentIndexChanged.connect(self._on_language_changed)
         lang_row.addWidget(self._lang_label)
         lang_row.addWidget(self._lang_combo)
